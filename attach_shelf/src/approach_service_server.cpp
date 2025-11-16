@@ -4,6 +4,7 @@
 #include <vector>
 
 #include "attach_shelf/srv/go_to_loading.hpp"
+#include "geometry_msgs/msg/point_stamped.hpp"
 #include "geometry_msgs/msg/transform_stamped.hpp"
 #include "geometry_msgs/msg/twist.hpp"
 #include "nav_msgs/msg/odometry.hpp"
@@ -12,7 +13,10 @@
 #include "std_msgs/msg/string.hpp"
 #include "tf2/LinearMath/Matrix3x3.h"
 #include "tf2/LinearMath/Quaternion.h"
+#include "tf2_geometry_msgs/tf2_geometry_msgs.hpp"
+#include "tf2_ros/buffer.h"
 #include "tf2_ros/static_transform_broadcaster.h"
+#include "tf2_ros/transform_listener.h"
 
 using namespace std::chrono_literals;
 using std::placeholders::_1;
@@ -21,10 +25,16 @@ using std::placeholders::_2;
 class ApproachServiceServer : public rclcpp::Node {
    public:
     ApproachServiceServer() : Node("approach_service_server_node") {
-        // Create service
+        // Create callback groups for concurrent execution
+        service_callback_group_ = this->create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive);
+        timer_callback_group_ = this->create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive);
+
+        // Create service with its own callback group
         service_ = this->create_service<attach_shelf::srv::GoToLoading>(
             "/approach_shelf",
-            std::bind(&ApproachServiceServer::approach_callback, this, _1, _2));
+            std::bind(&ApproachServiceServer::approach_callback, this, _1, _2),
+            rmw_qos_profile_services_default,
+            service_callback_group_);
 
         // Create subscriptions
         laser_sub_ = this->create_subscription<sensor_msgs::msg::LaserScan>(
@@ -42,9 +52,13 @@ class ApproachServiceServer : public rclcpp::Node {
         // Create static TF broadcaster
         static_tf_broadcaster_ = std::make_shared<tf2_ros::StaticTransformBroadcaster>(this);
 
-        // Create timer for control loop
+        // Create TF buffer and listener
+        tf_buffer_ = std::make_shared<tf2_ros::Buffer>(this->get_clock());
+        tf_listener_ = std::make_shared<tf2_ros::TransformListener>(*tf_buffer_);
+
+        // Create timer for control loop with its own callback group
         timer_ = this->create_wall_timer(
-            100ms, std::bind(&ApproachServiceServer::control_loop, this));
+            100ms, std::bind(&ApproachServiceServer::control_loop, this), timer_callback_group_);
 
         RCLCPP_INFO(this->get_logger(), "Approach Service Server Started");
     }
@@ -95,9 +109,21 @@ class ApproachServiceServer : public rclcpp::Node {
         // Publish cart_frame TF
         publish_cart_frame(legs);
 
+        // Give TF time to propagate through the system
+        RCLCPP_INFO(this->get_logger(), "Waiting for cart_frame TF to propagate...");
+        rclcpp::sleep_for(std::chrono::milliseconds(500));
+
         if (!request->attach_to_shelf) {
             // Only publish TF, don't approach
             response->complete = true;
+            RCLCPP_INFO(this->get_logger(), "Published cart_frame TF without approaching");
+            return;
+        }
+
+        // Verify cart_frame is available in TF tree
+        if (!tf_buffer_->canTransform("robot_base_link", "cart_frame", tf2::TimePointZero, std::chrono::seconds(3))) {
+            RCLCPP_ERROR(this->get_logger(), "cart_frame TF not available after waiting");
+            response->complete = false;
             return;
         }
 
@@ -106,10 +132,15 @@ class ApproachServiceServer : public rclcpp::Node {
         attach_to_shelf_ = true;
         state_ = State::MOVING_TO_CART;
 
+        RCLCPP_INFO(this->get_logger(), "Starting approach to shelf");
+
         // Wait for approach to complete
         while (service_active_ && rclcpp::ok()) {
             std::this_thread::sleep_for(100ms);
         }
+
+        RCLCPP_INFO(this->get_logger(), "Approach to shelf %s",
+                    approach_successful_ ? "successful" : "failed");
 
         response->complete = approach_successful_;
         return;
@@ -184,35 +215,48 @@ class ApproachServiceServer : public rclcpp::Node {
             return;
         }
 
-        // Calculate midpoint between two legs in robot frame
+        // Calculate midpoint between the two detected legs in laser frame
         double angle1 = legs[0].angle;
         double angle2 = legs[1].angle;
         double range1 = legs[0].range;
         double range2 = legs[1].range;
 
-        // Convert to Cartesian coordinates (robot frame)
+        // Convert to Cartesian coordinates (laser frame)
         double x1 = range1 * cos(angle1);
         double y1 = range1 * sin(angle1);
         double x2 = range2 * cos(angle2);
         double y2 = range2 * sin(angle2);
 
-        // Calculate midpoint in robot frame
-        cart_x_ = (x1 + x2) / 2.0;
-        cart_y_ = (y1 + y2) / 2.0;
+        // Calculate midpoint in laser frame
+        double cart_x_laser = (x1 + x2) / 2.0;
+        double cart_y_laser = (y1 + y2) / 2.0;
 
-        RCLCPP_INFO(this->get_logger(), "Cart frame at x=%.2f, y=%.2f (robot frame)", cart_x_, cart_y_);
+        RCLCPP_DEBUG(this->get_logger(), "Leg 1: angle=%.2f, range=%.2f -> x=%.2f, y=%.2f",
+                     angle1, range1, x1, y1);
+        RCLCPP_DEBUG(this->get_logger(), "Leg 2: angle=%.2f, range=%.2f -> x=%.2f, y=%.2f",
+                     angle2, range2, x2, y2);
+        RCLCPP_DEBUG(this->get_logger(), "Cart midpoint at x=%.2f, y=%.2f (laser frame)",
+                     cart_x_laser, cart_y_laser);
 
-        // Transform cart position to odom frame
-        // Robot position in odom frame
-        double robot_x_odom = current_x_;
-        double robot_y_odom = current_y_;
-        double robot_yaw_odom = current_yaw_;
+        // Create point in laser frame
+        geometry_msgs::msg::PointStamped point_in_laser;
+        point_in_laser.header.frame_id = last_laser_scan_->header.frame_id;
+        point_in_laser.header.stamp = last_laser_scan_->header.stamp;  // Use laser scan timestamp
+        point_in_laser.point.x = cart_x_laser;
+        point_in_laser.point.y = cart_y_laser;
+        point_in_laser.point.z = 0.0;
 
-        // Cart position in odom frame
-        double cart_x_odom = robot_x_odom + cart_x_ * cos(robot_yaw_odom) - cart_y_ * sin(robot_yaw_odom);
-        double cart_y_odom = robot_y_odom + cart_x_ * sin(robot_yaw_odom) + cart_y_ * cos(robot_yaw_odom);
+        // Transform to odom frame using TF2
+        geometry_msgs::msg::PointStamped point_in_odom;
+        try {
+            point_in_odom = tf_buffer_->transform(point_in_laser, "odom", tf2::durationFromSec(1.0));
 
-        RCLCPP_INFO(this->get_logger(), "Cart frame in odom at x=%.2f, y=%.2f", cart_x_odom, cart_y_odom);
+            RCLCPP_DEBUG(this->get_logger(), "Cart frame transformed to odom: x=%.2f, y=%.2f",
+                         point_in_odom.point.x, point_in_odom.point.y);
+        } catch (tf2::TransformException& ex) {
+            RCLCPP_ERROR(this->get_logger(), "TF2 transform failed: %s", ex.what());
+            return;
+        }
 
         // Broadcast static TF in odom frame
         geometry_msgs::msg::TransformStamped transform;
@@ -220,8 +264,8 @@ class ApproachServiceServer : public rclcpp::Node {
         transform.header.frame_id = "odom";
         transform.child_frame_id = "cart_frame";
 
-        transform.transform.translation.x = cart_x_odom;
-        transform.transform.translation.y = cart_y_odom;
+        transform.transform.translation.x = point_in_odom.point.x;
+        transform.transform.translation.y = point_in_odom.point.y;
         transform.transform.translation.z = 0.0;
 
         tf2::Quaternion q;
@@ -239,32 +283,65 @@ class ApproachServiceServer : public rclcpp::Node {
             return;
         }
 
+        RCLCPP_DEBUG_THROTTLE(this->get_logger(), *this->get_clock(), 2000,
+                              "Control loop active, state=%d", static_cast<int>(state_));
+
         auto twist_msg = geometry_msgs::msg::Twist();
 
         switch (state_) {
             case State::MOVING_TO_CART: {
-                // Calculate distance to cart frame
-                double distance = sqrt(cart_x_ * cart_x_ + cart_y_ * cart_y_);
-                double angle_to_cart = atan2(cart_y_, cart_x_);
-
-                // First align with cart
-                if (std::abs(angle_to_cart) > 0.05) {           // ~3 degrees
-                    twist_msg.angular.z = angle_to_cart * 1.5;  // Proportional control
-                    vel_pub_->publish(twist_msg);
+                // Check if cart_frame is available
+                if (!tf_buffer_->canTransform("robot_base_link", "cart_frame", tf2::TimePointZero)) {
+                    RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 1000,
+                                         "Waiting for cart_frame TF to become available");
                     break;
                 }
 
-                // Then move forward
-                if (distance > 0.05) {                                   // 5cm threshold
-                    twist_msg.linear.x = std::min(0.3, distance * 0.5);  // Proportional control
-                    vel_pub_->publish(twist_msg);
+                // Use TF to get transform from robot_base_link to cart_frame
+                geometry_msgs::msg::TransformStamped transform_stamped;
+                try {
+                    transform_stamped = tf_buffer_->lookupTransform(
+                        "robot_base_link", "cart_frame", tf2::TimePointZero);
+                } catch (tf2::TransformException& ex) {
+                    RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 1000,
+                                         "TF lookup failed: %s", ex.what());
                     break;
                 }
 
-                // Reached cart position
-                vel_pub_->publish(twist_msg);  // Stop
-                state_ = State::MOVING_UNDER_SHELF;
-                RCLCPP_INFO(this->get_logger(), "Reached cart position, moving under shelf");
+                // Get target position in robot frame
+                double target_x = transform_stamped.transform.translation.x;
+                double target_y = transform_stamped.transform.translation.y;
+
+                // Calculate distance and angle to target
+                double distance = sqrt(target_x * target_x + target_y * target_y);
+                double angle_to_target = atan2(target_y, target_x);
+
+                RCLCPP_DEBUG_THROTTLE(this->get_logger(), *this->get_clock(), 1000,
+                                      "MOVING_TO_CART: distance=%.2f, angle=%.2f", distance, angle_to_target);
+
+                // If very close, be more lenient with angle and just proceed
+                if (distance < 0.10) {  // 10cm - close enough to move under shelf
+                    vel_pub_->publish(twist_msg);  // Stop
+                    state_ = State::MOVING_UNDER_SHELF;
+                    RCLCPP_INFO(this->get_logger(), "Reached cart position (%.2fm away), moving under shelf", distance);
+                    break;
+                }
+
+                // If far from target, prioritize alignment first
+                if (distance > 0.3 && std::abs(angle_to_target) > 0.1) {  // 30cm away and >6 degrees off
+                    twist_msg.angular.z = angle_to_target * 1.5;
+                    RCLCPP_DEBUG_THROTTLE(this->get_logger(), *this->get_clock(), 1000,
+                                          "Aligning: angular.z=%.2f", twist_msg.angular.z);
+                } else {
+                    // Close enough - move forward with gentle correction
+                    twist_msg.linear.x = std::min(0.3, distance * 0.5);
+                    twist_msg.angular.z = angle_to_target * 0.5;  // Gentle angular correction while moving
+                    RCLCPP_DEBUG_THROTTLE(this->get_logger(), *this->get_clock(), 1000,
+                                          "Approaching: linear.x=%.2f, angular.z=%.2f",
+                                          twist_msg.linear.x, twist_msg.angular.z);
+                }
+
+                vel_pub_->publish(twist_msg);
 
                 break;
             }
@@ -321,12 +398,16 @@ class ApproachServiceServer : public rclcpp::Node {
     };
 
     // ROS2 components
+    rclcpp::CallbackGroup::SharedPtr service_callback_group_;
+    rclcpp::CallbackGroup::SharedPtr timer_callback_group_;
     rclcpp::Service<attach_shelf::srv::GoToLoading>::SharedPtr service_;
     rclcpp::Subscription<sensor_msgs::msg::LaserScan>::SharedPtr laser_sub_;
     rclcpp::Subscription<nav_msgs::msg::Odometry>::SharedPtr odom_sub_;
     rclcpp::Publisher<geometry_msgs::msg::Twist>::SharedPtr vel_pub_;
     rclcpp::Publisher<std_msgs::msg::String>::SharedPtr elevator_up_pub_;
     std::shared_ptr<tf2_ros::StaticTransformBroadcaster> static_tf_broadcaster_;
+    std::shared_ptr<tf2_ros::Buffer> tf_buffer_;
+    std::shared_ptr<tf2_ros::TransformListener> tf_listener_;
     rclcpp::TimerBase::SharedPtr timer_;
 
     // State
@@ -341,8 +422,6 @@ class ApproachServiceServer : public rclcpp::Node {
     double current_yaw_ = 0.0;
     double current_x_ = 0.0;
     double current_y_ = 0.0;
-    double cart_x_ = 0.0;
-    double cart_y_ = 0.0;
     double final_approach_start_x_ = 0.0;
     double final_approach_start_y_ = 0.0;
 };
@@ -350,7 +429,12 @@ class ApproachServiceServer : public rclcpp::Node {
 int main(int argc, char** argv) {
     rclcpp::init(argc, argv);
     auto node = std::make_shared<ApproachServiceServer>();
-    rclcpp::spin(node);
+
+    // Use MultiThreadedExecutor to allow service and timer to run concurrently
+    rclcpp::executors::MultiThreadedExecutor executor;
+    executor.add_node(node);
+    executor.spin();
+
     rclcpp::shutdown();
     return 0;
 }
