@@ -12,7 +12,7 @@
 #include "std_msgs/msg/string.hpp"
 #include "tf2/LinearMath/Matrix3x3.h"
 #include "tf2/LinearMath/Quaternion.h"
-#include "tf2_ros/transform_broadcaster.h"
+#include "tf2_ros/static_transform_broadcaster.h"
 
 using namespace std::chrono_literals;
 using std::placeholders::_1;
@@ -39,8 +39,8 @@ class ApproachServiceServer : public rclcpp::Node {
 
         elevator_up_pub_ = this->create_publisher<std_msgs::msg::String>("/elevator_up", 10);
 
-        // Create TF broadcaster
-        tf_broadcaster_ = std::make_shared<tf2_ros::TransformBroadcaster>(this);
+        // Create static TF broadcaster
+        static_tf_broadcaster_ = std::make_shared<tf2_ros::StaticTransformBroadcaster>(this);
 
         // Create timer for control loop
         timer_ = this->create_wall_timer(
@@ -184,32 +184,44 @@ class ApproachServiceServer : public rclcpp::Node {
             return;
         }
 
-        // Calculate midpoint between two legs
+        // Calculate midpoint between two legs in robot frame
         double angle1 = legs[0].angle;
         double angle2 = legs[1].angle;
         double range1 = legs[0].range;
         double range2 = legs[1].range;
 
-        // Convert to Cartesian coordinates
+        // Convert to Cartesian coordinates (robot frame)
         double x1 = range1 * cos(angle1);
         double y1 = range1 * sin(angle1);
         double x2 = range2 * cos(angle2);
         double y2 = range2 * sin(angle2);
 
-        // Calculate midpoint
+        // Calculate midpoint in robot frame
         cart_x_ = (x1 + x2) / 2.0;
         cart_y_ = (y1 + y2) / 2.0;
 
         RCLCPP_INFO(this->get_logger(), "Cart frame at x=%.2f, y=%.2f (robot frame)", cart_x_, cart_y_);
 
-        // Broadcast TF
+        // Transform cart position to odom frame
+        // Robot position in odom frame
+        double robot_x_odom = current_x_;
+        double robot_y_odom = current_y_;
+        double robot_yaw_odom = current_yaw_;
+
+        // Cart position in odom frame
+        double cart_x_odom = robot_x_odom + cart_x_ * cos(robot_yaw_odom) - cart_y_ * sin(robot_yaw_odom);
+        double cart_y_odom = robot_y_odom + cart_x_ * sin(robot_yaw_odom) + cart_y_ * cos(robot_yaw_odom);
+
+        RCLCPP_INFO(this->get_logger(), "Cart frame in odom at x=%.2f, y=%.2f", cart_x_odom, cart_y_odom);
+
+        // Broadcast static TF in odom frame
         geometry_msgs::msg::TransformStamped transform;
         transform.header.stamp = this->now();
-        transform.header.frame_id = "robot_front_laser_base_link";
+        transform.header.frame_id = "odom";
         transform.child_frame_id = "cart_frame";
 
-        transform.transform.translation.x = cart_x_;
-        transform.transform.translation.y = cart_y_;
+        transform.transform.translation.x = cart_x_odom;
+        transform.transform.translation.y = cart_y_odom;
         transform.transform.translation.z = 0.0;
 
         tf2::Quaternion q;
@@ -219,7 +231,7 @@ class ApproachServiceServer : public rclcpp::Node {
         transform.transform.rotation.z = q.z();
         transform.transform.rotation.w = q.w();
 
-        tf_broadcaster_->sendTransform(transform);
+        static_tf_broadcaster_->sendTransform(transform);
     }
 
     void control_loop() {
@@ -314,7 +326,7 @@ class ApproachServiceServer : public rclcpp::Node {
     rclcpp::Subscription<nav_msgs::msg::Odometry>::SharedPtr odom_sub_;
     rclcpp::Publisher<geometry_msgs::msg::Twist>::SharedPtr vel_pub_;
     rclcpp::Publisher<std_msgs::msg::String>::SharedPtr elevator_up_pub_;
-    std::shared_ptr<tf2_ros::TransformBroadcaster> tf_broadcaster_;
+    std::shared_ptr<tf2_ros::StaticTransformBroadcaster> static_tf_broadcaster_;
     rclcpp::TimerBase::SharedPtr timer_;
 
     // State
