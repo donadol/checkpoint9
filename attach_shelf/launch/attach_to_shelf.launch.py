@@ -2,9 +2,15 @@ from launch import LaunchDescription
 from launch_ros.actions import Node
 from launch.actions import DeclareLaunchArgument
 from launch.substitutions import LaunchConfiguration
+from ament_index_python.packages import get_package_share_directory
+import os
 
 
 def generate_launch_description():
+    # Get package directory
+    pkg_attach_shelf = get_package_share_directory('attach_shelf')
+    rviz_config_file = os.path.join(pkg_attach_shelf, 'rviz', 'config.rviz')
+
     # Declare launch arguments
     obstacle_arg = DeclareLaunchArgument(
         'obstacle',
@@ -50,10 +56,20 @@ def generate_launch_description():
         }]
     )
 
+    # RViz node
+    rviz_node = Node(
+        package='rviz2',
+        executable='rviz2',
+        name='rviz2',
+        arguments=['-d', rviz_config_file],
+        output='screen'
+    )
+
     return LaunchDescription([
         obstacle_arg,
         degrees_arg,
         final_approach_arg,
         approach_service_server_node,
-        pre_approach_v2_node
+        pre_approach_v2_node,
+        rviz_node
     ])
