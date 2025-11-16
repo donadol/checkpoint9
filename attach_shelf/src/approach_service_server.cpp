@@ -98,6 +98,7 @@ class ApproachServiceServer : public rclcpp::Node {
         if (!request->attach_to_shelf) {
             // Only publish TF, don't approach
             response->complete = true;
+            return;
         }
 
         // Perform final approach
@@ -107,7 +108,6 @@ class ApproachServiceServer : public rclcpp::Node {
 
         // Wait for approach to complete
         while (service_active_ && rclcpp::ok()) {
-            rclcpp::spin_some(this->get_node_base_interface());
             std::this_thread::sleep_for(100ms);
         }
 
@@ -269,7 +269,7 @@ class ApproachServiceServer : public rclcpp::Node {
                 if (distance_traveled < 0.30) {  // 30cm
                     twist_msg.linear.x = 0.2;
                     vel_pub_->publish(twist_msg);
-                    break:
+                    break;
                 }
 
                 vel_pub_->publish(twist_msg);  // Stop

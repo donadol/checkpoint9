@@ -116,9 +116,12 @@ class PreApproachNodeV2 : public rclcpp::Node {
         // Send async request
         auto result_future = approach_client_->async_send_request(request);
 
-        // Wait for result
-        if (rclcpp::spin_until_future_complete(this->get_node_base_interface(), result_future) ==
-            rclcpp::FutureReturnCode::SUCCESS) {
+        // Wait for result using a simple loop instead of spin_until_future_complete
+        while (rclcpp::ok() && result_future.wait_for(100ms) != std::future_status::ready) {
+            // Just wait - the executor will handle spinning the node
+        }
+
+        if (result_future.valid()) {
             auto result = result_future.get();
             RCLCPP_INFO(this->get_logger(), "Service call completed: %s",
                         result->complete ? "SUCCESS" : "FAILED");
