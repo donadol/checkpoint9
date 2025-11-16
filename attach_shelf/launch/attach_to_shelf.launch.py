@@ -1,6 +1,6 @@
 from launch import LaunchDescription
 from launch_ros.actions import Node
-from launch.actions import DeclareLaunchArgument
+from launch.actions import DeclareLaunchArgument, TimerAction
 from launch.substitutions import LaunchConfiguration
 from ament_index_python.packages import get_package_share_directory
 import os
@@ -65,11 +65,17 @@ def generate_launch_description():
         output='screen'
     )
 
+    # Delay pre_approach_v2_node to allow TF tree to stabilize
+    delayed_pre_approach = TimerAction(
+        period=3.0,  # Wait 3 seconds
+        actions=[pre_approach_v2_node]
+    )
+
     return LaunchDescription([
         obstacle_arg,
         degrees_arg,
         final_approach_arg,
         approach_service_server_node,
-        pre_approach_v2_node,
-        rviz_node
+        rviz_node,
+        delayed_pre_approach  # Launch pre_approach_v2 after delay
     ])
