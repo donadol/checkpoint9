@@ -13,8 +13,17 @@ find_package(geometry_msgs REQUIRED)
 find_package(sensor_msgs REQUIRED)
 find_package(nav_msgs REQUIRED)
 find_package(tf2 REQUIRED)
+find_package(tf2_ros REQUIRED)
 find_package(tf2_geometry_msgs REQUIRED)
+find_package(rosidl_default_generators REQUIRED)
 
+# Generate custom service
+rosidl_generate_interfaces(${PROJECT_NAME}
+  "srv/GoToLoading.srv"
+  DEPENDENCIES std_msgs
+)
+
+# Pre-approach node (Task 1)
 add_executable(pre_approach_node src/pre_approach.cpp)
 ament_target_dependencies(pre_approach_node
   rclcpp
@@ -26,11 +35,42 @@ ament_target_dependencies(pre_approach_node
   tf2_geometry_msgs
 )
 
+# Pre-approach v2 node (Task 2)
+add_executable(pre_approach_v2_node src/pre_approach_v2.cpp)
+ament_target_dependencies(pre_approach_v2_node
+  rclcpp
+  std_msgs
+  geometry_msgs
+  sensor_msgs
+  nav_msgs
+  tf2
+  tf2_geometry_msgs
+)
+rosidl_target_interfaces(pre_approach_v2_node ${PROJECT_NAME} "rosidl_typesupport_cpp")
+
+# Approach service server node (Task 2)
+add_executable(approach_service_server_node src/approach_service_server.cpp)
+ament_target_dependencies(approach_service_server_node
+  rclcpp
+  std_msgs
+  geometry_msgs
+  sensor_msgs
+  nav_msgs
+  tf2
+  tf2_ros
+  tf2_geometry_msgs
+)
+rosidl_target_interfaces(approach_service_server_node ${PROJECT_NAME} "rosidl_typesupport_cpp")
+
+# Install executables
 install(TARGETS
   pre_approach_node
+  pre_approach_v2_node
+  approach_service_server_node
   DESTINATION lib/${PROJECT_NAME}
 )
 
+# Install directories
 install(DIRECTORY
   launch
   rviz
