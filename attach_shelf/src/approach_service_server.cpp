@@ -174,6 +174,9 @@ class ApproachServiceServer : public rclcpp::Node {
             leg.range = last_laser_scan_->ranges[center_idx];
             legs.push_back(leg);
         }
+
+        RCLCPP_INFO(this->get_logger(), "Detected %zu shelf legs", legs.size());
+        return legs;
     }
 
     void publish_cart_frame(const std::vector<LegDetection>& legs) {
