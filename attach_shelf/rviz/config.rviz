@@ -78,7 +78,7 @@ Visualization Manager:
       Name: TF
       Show Arrows: true
       Show Axes: true
-      Show Names: false
+      Show Names: true
       Tree:
         odom:
           robot_base_footprint:
