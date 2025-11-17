@@ -113,23 +113,16 @@ class PreApproachNodeV2 : public rclcpp::Node {
         auto request = std::make_shared<attach_shelf::srv::GoToLoading::Request>();
         request->attach_to_shelf = final_approach_;
 
-        // Send async request
-        auto result_future = approach_client_->async_send_request(request);
-
-        // Wait for result using a simple loop instead of spin_until_future_complete
-        while (rclcpp::ok() && result_future.wait_for(100ms) != std::future_status::ready) {
-            // Just wait - the executor will handle spinning the node
-        }
-
-        if (result_future.valid()) {
-            auto result = result_future.get();
+        // Send async request with callback
+        auto response_callback = [this](rclcpp::Client<attach_shelf::srv::GoToLoading>::SharedFuture future) {
+            auto result = future.get();
             RCLCPP_INFO(this->get_logger(), "Service call completed: %s",
                         result->complete ? "SUCCESS" : "FAILED");
-        } else {
-            RCLCPP_ERROR(this->get_logger(), "Failed to call service");
-        }
+            state_ = State::COMPLETED;
+        };
 
-        state_ = State::COMPLETED;
+        approach_client_->async_send_request(request, response_callback);
+        RCLCPP_INFO(this->get_logger(), "Service request sent, waiting for response...");
     }
 
     void control_loop() {
