@@ -25,9 +25,15 @@ PreApproach::PreApproach(const rclcpp::NodeOptions& options)
       initial_yaw_(0.0),
       target_yaw_(0.0) {
 
+    // Declare parameter for shutdown control
+    this->declare_parameter<bool>("shutdown_on_complete", true);
+    shutdown_on_complete_ = this->get_parameter("shutdown_on_complete").as_bool();
+
     RCLCPP_INFO(this->get_logger(), "PreApproach Component Started");
     RCLCPP_INFO(this->get_logger(), "Obstacle distance: %.2f m", obstacle_distance_);
     RCLCPP_INFO(this->get_logger(), "Rotation degrees: %d", rotation_degrees_);
+    RCLCPP_INFO(this->get_logger(), "Shutdown on complete: %s",
+                shutdown_on_complete_ ? "true" : "false");
 
     // Create subscription to laser scan
     laser_sub_ = this->create_subscription<sensor_msgs::msg::LaserScan>(
@@ -164,11 +170,15 @@ void PreApproach::control_loop() {
                 timer_.reset();
             }
 
-            RCLCPP_INFO(this->get_logger(),
-                       "Pre-approach maneuver completed. Shutting down.");
+            if (shutdown_on_complete_) {
+                RCLCPP_INFO(this->get_logger(),
+                           "Pre-approach maneuver completed. Shutting down.");
+                rclcpp::shutdown();
+            } else {
+                RCLCPP_INFO(this->get_logger(),
+                           "Pre-approach maneuver completed.");
+            }
 
-            // Shutdown ROS2 to terminate the program
-            rclcpp::shutdown();
             break;
         }
     }

@@ -15,6 +15,7 @@ def generate_launch_description():
     """
 
     # Component container with PreApproach and AttachServer components
+    # Task 2: PreApproach should NOT shutdown (AttachClient will shutdown later)
     container = ComposableNodeContainer(
         name='my_container',
         namespace='',
@@ -24,7 +25,8 @@ def generate_launch_description():
             ComposableNode(
                 package='my_components',
                 plugin='my_components::PreApproach',
-                name='pre_approach'),
+                name='pre_approach',
+                parameters=[{'shutdown_on_complete': False}]),
             ComposableNode(
                 package='my_components',
                 plugin='my_components::AttachServer',

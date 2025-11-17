@@ -384,7 +384,17 @@ void AttachServer::control_loop() {
         }
 
         case State::COMPLETED: {
-            // Do nothing
+            // Stop the timer to prevent further callbacks
+            if (timer_) {
+                timer_->cancel();
+                timer_.reset();
+            }
+
+            RCLCPP_INFO(this->get_logger(),
+                       "Shelf attachment complete. Shutting down.");
+
+            // Shutdown ROS2 to terminate the entire container
+            rclcpp::shutdown();
             break;
         }
     }

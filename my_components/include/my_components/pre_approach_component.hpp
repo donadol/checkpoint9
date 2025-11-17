@@ -46,6 +46,9 @@ class PreApproach : public rclcpp::Node {
     const double linear_velocity_ = 0.5;     // m/s
     const double angular_velocity_ = 0.8;    // rad/s
     const double angle_tolerance_ = 0.02;    // rad (~1.1 degrees)
+
+    // Shutdown control
+    bool shutdown_on_complete_;
 };
 
 }  // namespace my_components

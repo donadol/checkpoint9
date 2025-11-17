@@ -14,7 +14,6 @@ namespace my_components {
 
 AttachClient::AttachClient(const rclcpp::NodeOptions& options)
     : Node("attach_client", options), service_called_(false) {
-
     RCLCPP_INFO(this->get_logger(), "AttachClient Component Started");
 
     // Create service client
@@ -33,11 +32,11 @@ void AttachClient::call_service() {
     if (!client_->wait_for_service(1s)) {
         if (!rclcpp::ok()) {
             RCLCPP_ERROR(this->get_logger(),
-                        "Interrupted while waiting for the service. Exiting.");
+                         "Interrupted while waiting for the service. Exiting.");
             return;
         }
         RCLCPP_WARN(this->get_logger(),
-                   "/approach_shelf service not available, waiting...");
+                    "/approach_shelf service not available, waiting...");
         return;
     }
 
@@ -52,7 +51,7 @@ void AttachClient::call_service() {
     request->attach_to_shelf = true;
 
     RCLCPP_INFO(this->get_logger(),
-               "Calling /approach_shelf service with attach_to_shelf=true");
+                "Calling /approach_shelf service with attach_to_shelf=true");
 
     // Async send request
     auto response_received_callback = [this](ServiceResponseFuture future) {
@@ -60,14 +59,14 @@ void AttachClient::call_service() {
             auto response = future.get();
             if (response->complete) {
                 RCLCPP_INFO(this->get_logger(),
-                           "Service call successful! Robot attached to shelf. Shutting down.");
+                            "Service call successful! Robot attached to shelf. Shutting down.");
             } else {
                 RCLCPP_ERROR(this->get_logger(),
-                            "Service call failed. Robot could not attach to shelf. Shutting down.");
+                             "Service call failed. Robot could not attach to shelf. Shutting down.");
             }
         } catch (const std::exception& e) {
             RCLCPP_ERROR(this->get_logger(),
-                        "Service call exception: %s. Shutting down.", e.what());
+                         "Service call exception: %s. Shutting down.", e.what());
         }
 
         // Shutdown ROS2 to terminate the program
