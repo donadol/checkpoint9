@@ -61,6 +61,7 @@ The node implements a state machine with three states:
 3. **COMPLETED**
    - Robot stops all movement
    - Final position: facing the shelf at loading position with high precision
+   - Node automatically shuts down after task completion
 
 ### Building the Package
 
@@ -263,9 +264,15 @@ An extended version of the pre_approach_node that calls the approach service aft
 
 **Behavior**:
 1. Executes same pre-approach logic as Task 1
-2. After rotation completes, calls `/approach_shelf` service
+2. After rotation completes, calls `/approach_shelf` service asynchronously
 3. Passes `final_approach` parameter value to service request
-4. Waits for service response and logs result
+4. Uses callback-based approach to handle service response without blocking
+5. Automatically shuts down node after service completes
+
+**Implementation Notes**:
+- Uses async service client with response callback to avoid blocking executor
+- Callback sets state to COMPLETED when service response is received
+- Node terminates cleanly after task completion
 
 ### Building the Package
 
