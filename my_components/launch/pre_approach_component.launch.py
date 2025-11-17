@@ -1,17 +1,14 @@
 import launch
-from launch_ros.actions import ComposableNodeContainer, Node
+from launch_ros.actions import ComposableNodeContainer
 from launch_ros.descriptions import ComposableNode
-from launch.actions import TimerAction
-from ament_index_python.packages import get_package_share_directory
-import os
 
 
 def generate_launch_description():
-    """Generate launch description with PreApproach component and RViz."""
+    """Generate launch description with PreApproach component.
 
-    # Get RViz config file from my_components package
-    pkg_my_components = get_package_share_directory('my_components')
-    rviz_config_file = os.path.join(pkg_my_components, 'rviz', 'config.rviz')
+    Note: RViz cannot be launched with components. To visualize:
+    rviz2 -d ~/ros2_ws/src/checkpoint9/my_components/rviz/config.rviz
+    """
 
     # Component container with PreApproach component
     container = ComposableNodeContainer(
@@ -28,22 +25,6 @@ def generate_launch_description():
         output='screen',
     )
 
-    # RViz node
-    rviz_node = Node(
-        package='rviz2',
-        executable='rviz2',
-        name='rviz2',
-        arguments=['-d', rviz_config_file],
-        output='screen'
-    )
-
-    # Delay component container to allow TF tree to stabilize
-    delayed_container = TimerAction(
-        period=3.0,  # Wait 3 seconds
-        actions=[container]
-    )
-
     return launch.LaunchDescription([
-        rviz_node,
-        delayed_container
+        container
     ])
