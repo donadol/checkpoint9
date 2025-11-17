@@ -2,13 +2,13 @@
 #include <cmath>
 #include <memory>
 
+#include "attach_shelf/srv/go_to_loading.hpp"
 #include "geometry_msgs/msg/twist.hpp"
 #include "nav_msgs/msg/odometry.hpp"
 #include "rclcpp/rclcpp.hpp"
 #include "sensor_msgs/msg/laser_scan.hpp"
-#include "tf2/LinearMath/Quaternion.h"
 #include "tf2/LinearMath/Matrix3x3.h"
-#include "attach_shelf/srv/go_to_loading.hpp"
+#include "tf2/LinearMath/Quaternion.h"
 
 using namespace std::chrono_literals;
 using std::placeholders::_1;
@@ -130,15 +130,6 @@ class PreApproachNodeV2 : public rclcpp::Node {
         }
 
         state_ = State::COMPLETED;
-
-        // Stop the timer and shutdown
-        if (timer_) {
-            timer_->cancel();
-            timer_.reset();
-        }
-
-        RCLCPP_INFO(this->get_logger(), "Pre-approach V2 completed. Shutting down node.");
-        rclcpp::shutdown();
     }
 
     void control_loop() {
@@ -203,7 +194,7 @@ class PreApproachNodeV2 : public rclcpp::Node {
                 twist_msg.linear.x = 0.0;
 
                 // Use proportional control near target, full speed otherwise
-                if (std::abs(angle_diff) < 0.3) {  // Within ~17 degrees
+                if (std::abs(angle_diff) < 0.3) {            // Within ~17 degrees
                     twist_msg.angular.z = angle_diff * 2.0;  // Proportional gain
                 } else {
                     twist_msg.angular.z = (angle_diff > 0) ? angular_velocity_ : -angular_velocity_;
@@ -213,9 +204,20 @@ class PreApproachNodeV2 : public rclcpp::Node {
                 break;
             }
 
-            case State::CALLING_SERVICE:
+            case State::CALLING_SERVICE: {
+                // Service is being called in another thread
+                break;
+            }
+
             case State::COMPLETED: {
-                // Do nothing - maneuver is complete
+                // Stop the timer to prevent further callbacks
+                if (timer_) {
+                    timer_->cancel();
+                    timer_.reset();
+                }
+
+                RCLCPP_INFO(this->get_logger(), "Pre-approach V2 completed. Shutting down node.");
+                rclcpp::shutdown();
                 break;
             }
         }
