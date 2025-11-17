@@ -41,9 +41,10 @@ install(TARGETS
   LIBRARY DESTINATION lib
   RUNTIME DESTINATION bin)
 
-# Install launch files
+# Install files
 install(DIRECTORY
   launch
+  rviz
   DESTINATION share/${PROJECT_NAME}
 )
 

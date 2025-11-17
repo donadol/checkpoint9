@@ -9,9 +9,9 @@ import os
 def generate_launch_description():
     """Generate launch description with PreApproach component and RViz."""
 
-    # Get RViz config file from attach_shelf package
-    pkg_attach_shelf = get_package_share_directory('attach_shelf')
-    rviz_config_file = os.path.join(pkg_attach_shelf, 'rviz', 'config.rviz')
+    # Get RViz config file from my_components package
+    pkg_my_components = get_package_share_directory('my_components')
+    rviz_config_file = os.path.join(pkg_my_components, 'rviz', 'config.rviz')
 
     # Component container with PreApproach component
     container = ComposableNodeContainer(

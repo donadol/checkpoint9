@@ -165,7 +165,10 @@ void PreApproach::control_loop() {
             }
 
             RCLCPP_INFO(this->get_logger(),
-                       "Pre-approach maneuver completed.");
+                       "Pre-approach maneuver completed. Shutting down.");
+
+            // Shutdown ROS2 to terminate the program
+            rclcpp::shutdown();
             break;
         }
     }
