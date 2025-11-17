@@ -160,7 +160,16 @@ class PreApproachNode : public rclcpp::Node {
             }
 
             case State::COMPLETED: {
-                // Do nothing - maneuver is complete
+                // Stop the timer to prevent further callbacks
+                if (timer_) {
+                    timer_->cancel();
+                    timer_.reset();
+                }
+
+                RCLCPP_INFO(this->get_logger(), "Pre-approach maneuver completed. Shutting down node.");
+
+                // Shutdown the node
+                rclcpp::shutdown();
                 break;
             }
         }

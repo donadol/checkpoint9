@@ -130,6 +130,15 @@ class PreApproachNodeV2 : public rclcpp::Node {
         }
 
         state_ = State::COMPLETED;
+
+        // Stop the timer and shutdown
+        if (timer_) {
+            timer_->cancel();
+            timer_.reset();
+        }
+
+        RCLCPP_INFO(this->get_logger(), "Pre-approach V2 completed. Shutting down node.");
+        rclcpp::shutdown();
     }
 
     void control_loop() {
