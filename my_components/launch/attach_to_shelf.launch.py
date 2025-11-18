@@ -16,11 +16,12 @@ def generate_launch_description():
 
     # Component container with PreApproach and AttachServer components
     # Task 2: PreApproach should NOT shutdown (AttachClient will shutdown later)
+    # Note: Using component_container_mt (multi-threaded) for AttachServer's callback groups
     container = ComposableNodeContainer(
         name='my_container',
         namespace='',
         package='rclcpp_components',
-        executable='component_container',
+        executable='component_container_mt',
         composable_node_descriptions=[
             ComposableNode(
                 package='my_components',

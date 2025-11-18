@@ -37,7 +37,6 @@ AttachServer::AttachServer(const rclcpp::NodeOptions& options)
       current_y_(0.0),
       final_approach_start_x_(0.0),
       final_approach_start_y_(0.0) {
-
     RCLCPP_INFO(this->get_logger(), "AttachServer Component Started");
 
     // Create callback groups for concurrent execution
@@ -107,7 +106,6 @@ void AttachServer::odom_callback(
 void AttachServer::approach_callback(
     const std::shared_ptr<attach_shelf::srv::GoToLoading::Request> request,
     std::shared_ptr<attach_shelf::srv::GoToLoading::Response> response) {
-
     RCLCPP_INFO(this->get_logger(), "Approach service called with attach_to_shelf=%s",
                 request->attach_to_shelf ? "true" : "false");
 
@@ -138,7 +136,7 @@ void AttachServer::approach_callback(
         // Only publish TF, don't approach
         response->complete = true;
         RCLCPP_INFO(this->get_logger(),
-                   "Published cart_frame TF without approaching");
+                    "Published cart_frame TF without approaching");
         return;
     }
 
@@ -146,7 +144,7 @@ void AttachServer::approach_callback(
     if (!tf_buffer_->canTransform("robot_base_link", "cart_frame",
                                   tf2::TimePointZero, std::chrono::seconds(3))) {
         RCLCPP_ERROR(this->get_logger(),
-                    "cart_frame TF not available after waiting");
+                     "cart_frame TF not available after waiting");
         response->complete = false;
         return;
     }
@@ -220,7 +218,7 @@ std::vector<AttachServer::LegDetection> AttachServer::detect_shelf_legs() {
         LegDetection leg;
         leg.index = center_idx;
         leg.angle = last_laser_scan_->angle_min +
-                   center_idx * last_laser_scan_->angle_increment;
+                    center_idx * last_laser_scan_->angle_increment;
         leg.range = last_laser_scan_->ranges[center_idx];
         legs.push_back(leg);
     }
@@ -299,9 +297,9 @@ void AttachServer::control_loop() {
         case State::MOVING_TO_CART: {
             // Check if cart_frame is available
             if (!tf_buffer_->canTransform("robot_base_link", "cart_frame",
-                                         tf2::TimePointZero)) {
+                                          tf2::TimePointZero)) {
                 RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 1000,
-                                    "Waiting for cart_frame TF to become available");
+                                     "Waiting for cart_frame TF to become available");
                 break;
             }
 
@@ -312,7 +310,7 @@ void AttachServer::control_loop() {
                     "robot_base_link", "cart_frame", tf2::TimePointZero);
             } catch (tf2::TransformException& ex) {
                 RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 1000,
-                                    "TF lookup failed: %s", ex.what());
+                                     "TF lookup failed: %s", ex.what());
                 break;
             }
 
@@ -325,12 +323,12 @@ void AttachServer::control_loop() {
             double angle_to_target = atan2(target_y, target_x);
 
             // If very close, move under shelf
-            if (distance < 0.10) {  // 10cm
+            if (distance < 0.10) {             // 10cm
                 vel_pub_->publish(twist_msg);  // Stop
                 state_ = State::MOVING_UNDER_SHELF;
                 RCLCPP_INFO(this->get_logger(),
-                           "Reached cart position (%.2fm away), moving under shelf",
-                           distance);
+                            "Reached cart position (%.2fm away), moving under shelf",
+                            distance);
                 break;
             }
 
@@ -379,7 +377,6 @@ void AttachServer::control_loop() {
             RCLCPP_INFO(this->get_logger(), "Shelf lifted successfully");
             state_ = State::COMPLETED;
             approach_successful_ = true;
-            service_active_ = false;
             break;
         }
 
@@ -390,8 +387,11 @@ void AttachServer::control_loop() {
                 timer_.reset();
             }
 
+            // Mark service as inactive
+            service_active_ = false;
+
             RCLCPP_INFO(this->get_logger(),
-                       "Shelf attachment complete. Shutting down.");
+                        "Shelf attachment complete. Shutting down.");
 
             // Shutdown ROS2 to terminate the entire container
             rclcpp::shutdown();
