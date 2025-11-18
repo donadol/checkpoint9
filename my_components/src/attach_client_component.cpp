@@ -59,18 +59,16 @@ void AttachClient::call_service() {
             auto response = future.get();
             if (response->complete) {
                 RCLCPP_INFO(this->get_logger(),
-                            "Service call successful! Robot attached to shelf. Shutting down.");
-            } else {
-                RCLCPP_ERROR(this->get_logger(),
-                             "Service call failed. Robot could not attach to shelf. Shutting down.");
+                            "Service call successful! Robot attached to shelf.");
+                return;
             }
+
+            RCLCPP_ERROR(this->get_logger(),
+                         "Service call failed. Robot could not attach to shelf.");
         } catch (const std::exception& e) {
             RCLCPP_ERROR(this->get_logger(),
-                         "Service call exception: %s. Shutting down.", e.what());
+                         "Service call exception: %s", e.what());
         }
-
-        // Shutdown ROS2 to terminate the program
-        rclcpp::shutdown();
     };
 
     client_->async_send_request(request, response_received_callback);
